@@ -1,0 +1,20 @@
+fastapi
+uvicorn[standard]
+python-multipart
+python-dotenv
+python-pptx
+numpy
+# voices
+edge-tts
+kokoro-onnx
+piper-tts
+# local AI on Intel NPU / GPU / CPU
+openvino
+openvino-genai
+huggingface_hub
+# optional remote LLM
+openai
+# slide rendering via PowerPoint (Windows)
+pywin32; sys_platform == "win32"
+anthropic[bedrock]   # [bedrock] adds boto3, needed only for IAM/SSO credentials (a Bedrock API key works without it)
+google-genai

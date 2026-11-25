@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Stage Presenter — AI Presentation Trainer</title>
+  <link rel="stylesheet" href="/styles.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 100 100%27><text y=%27.9em%27 font-size=%2790%27>🎤</text></svg>" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="logo">◉</span> Stage Presenter <small>AI presentation trainer</small></div>
+    <div class="top-actions">
+      <select id="recentDecks" title="Recent decks"><option value="">Recent decks…</option></select>
+      <label class="btn primary" for="fileInput">⬆ Upload .pptx</label>
+      <input id="fileInput" type="file" accept=".pptx" hidden />
+      <span id="llmStatus" class="pill"></span>
+      <span id="sttStatus" class="pill"></span>
+      <button id="openSettings" class="btn ghost" title="Model endpoints">⚙ Settings</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <!-- ============ Settings ============ -->
+    <aside class="panel settings">
+      <h3>Delivery</h3>
+      <label>Tone <select id="tone"></select></label>
+      <label>Presentation style <select id="style"></select></label>
+      <label>Length per slide <select id="length"></select></label>
+      <label>Audience <input id="audience" placeholder="e.g. CXOs, engineers, students" /></label>
+      <label>Extra direction
+        <textarea id="instructions" rows="3" placeholder="e.g. Cite our customer-first values, keep it humble, include one rhetorical question"></textarea>
+      </label>
+
+      <h3>Voice</h3>
+      <label>Voice engine
+        <select id="engine">
+          <option value="edge">Edge neural (online, all accents)</option>
+          <option value="kokoro">Kokoro (offline, most natural)</option>
+          <option value="piper">Piper (offline, fastest)</option>
+          <option value="browser">Browser / Windows voice (offline)</option>
+        </select>
+      </label>
+      <label>English accent
+        <select id="locale">
+          <option value="en-IN">English (India)</option>
+          <option value="en-US" selected>English (US)</option>
+          <option value="en-GB">English (UK)</option>
+          <option value="en-AU">English (Australia)</option>
+          <option value="en-CA">English (Canada)</option>
+          <option value="en-IE">English (Ireland)</option>
+          <option value="en-NZ">English (New Zealand)</option>
+          <option value="en-ZA">English (South Africa)</option>
+          <option value="en-SG">English (Singapore)</option>
+        </select>
+      </label>
+      <div class="seg" id="genderSeg">
+        <button data-g="Female" class="on">♀ Female</button>
+        <button data-g="Male">♂ Male</button>
+      </div>
+      <label>Voice <select id="voice"></select></label>
+      <label>Pace <span id="rateVal">0%</span><input id="rate" type="range" min="-40" max="40" value="-5" /></label>
+      <p id="voiceNote" class="note hidden"></p>
+      <label id="pitchRow">Pitch <span id="pitchVal">0Hz</span><input id="pitch" type="range" min="-20" max="20" value="0" /></label>
+      <button id="previewVoice" class="btn ghost">▶ Preview voice</button>
+
+      <h3>Trainer</h3>
+      <label class="check"><input type="checkbox" id="autoAdvance" checked /> Auto-advance slides</label>
+      <label class="check"><input type="checkbox" id="shadowMode" /> Shadow mode (pause after each sentence so you repeat it)</label>
+      <label class="check"><input type="checkbox" id="hideScript" /> Hide script (rehearse from memory)</label>
+      <label>Pause between slides <span id="gapVal">1.5s</span><input id="gap" type="range" min="0" max="6" step="0.5" value="1.5" /></label>
+
+      <button id="genAll" class="btn primary wide" disabled>✨ Generate full script</button>
+      <div id="genProgress" class="progress hidden"><div></div></div>
+    </aside>
+
+    <!-- ============ Stage ============ -->
+    <section class="stage-wrap">
+      <div id="empty" class="empty">
+        <div class="drop" id="dropZone">
+          <div class="big">🎤</div>
+          <h2>Drop a PowerPoint with speaker notes</h2>
+          <p>The presenter will turn your notes into eloquent stage narration and deliver it in the voice, accent and tone you choose.</p>
+          <label class="btn primary" for="fileInput">Choose .pptx</label>
+        </div>
+      </div>
+
+      <div id="stageArea" class="hidden">
+        <div class="stage" id="stage">
+          <img id="slideImg" alt="" />
+          <div id="slideText" class="slide-text hidden"></div>
+          <div id="caption" class="caption hidden"></div>
+        </div>
+        <div class="controls">
+          <button id="prev" class="btn icon" title="Previous (←)">⏮</button>
+          <button id="play" class="btn icon big" title="Present (Space)">▶</button>
+          <button id="stop" class="btn icon" title="Stop">⏹</button>
+          <button id="next" class="btn icon" title="Next (→)">⏭</button>
+          <span id="slideCounter" class="counter">– / –</span>
+          <span class="spacer"></span>
+          <label class="check small"><input type="checkbox" id="captions" checked /> Captions</label>
+          <button id="fullscreen" class="btn ghost" title="Fullscreen (F)">⛶ Stage mode</button>
+        </div>
+        <div id="thumbs" class="thumbs"></div>
+      </div>
+    </section>
+
+    <!-- ============ Script ============ -->
+    <aside class="panel script-panel">
+      <div class="tabs">
+        <button data-tab="scriptTab" class="on">📜 Script</button>
+        <button data-tab="rehearseTab">🎙 Rehearse</button>
+      </div>
+
+      <div id="scriptTab" class="tab">
+        <div class="script-head">
+          <h3 id="scriptTitle">Script</h3>
+          <div class="script-actions">
+            <button id="regen" class="btn ghost small" title="Regenerate this slide">↻ Rewrite</button>
+            <button id="editToggle" class="btn ghost small">✎ Edit</button>
+            <button id="copyOne" class="btn ghost small">⧉ Copy</button>
+          </div>
+        </div>
+        <div id="teleprompter" class="teleprompter"><p class="muted">Upload a deck to begin.</p></div>
+        <textarea id="scriptEditor" class="hidden"></textarea>
+        <details class="notes">
+          <summary>Original speaker notes</summary>
+          <pre id="notesView"></pre>
+        </details>
+        <div class="script-foot">
+          <button id="copyAll" class="btn ghost small">⧉ Copy full script</button>
+          <a id="exportMd" class="btn ghost small">⬇ .md</a>
+          <a id="exportTxt" class="btn ghost small">⬇ .txt</a>
+        </div>
+      </div>
+
+      <div id="rehearseTab" class="tab hidden">
+        <p class="muted small">Deliver this slide yourself. Whisper transcribes your take on the NPU, and you get feedback on pace, fillers, pauses and how much of the script you covered, plus coaching from the AI.</p>
+        <div class="rec-box">
+          <button id="recBtn" class="btn rec" disabled>● Record this slide</button>
+          <div class="rec-meta">
+            <span id="recTime">0:00</span>
+            <div class="meter"><div id="recLevel"></div></div>
+          </div>
+        </div>
+        <label class="check small"><input type="checkbox" id="recShowScript" checked /> Show teleprompter while recording</label>
+        <label class="check small"><input type="checkbox" id="recCoach" checked /> AI coaching (local LLM)</label>
+        <div id="feedback" class="feedback"></div>
+        <div id="history" class="history"></div>
+      </div>
+    </aside>
+  </main>
+
+
+  <div id="settingsModal" class="modal hidden">
+    <div class="modal-box">
+      <div class="modal-head"><h2>⚙ Model endpoints</h2><button class="btn ghost small" id="closeSettings">✕</button></div>
+      <div class="set-grid">
+        <section class="set-card" data-sec="llm">
+          <h3>Language model</h3>
+          <p class="muted small">Writes the stage script and coaches your rehearsals.</p>
+          <div class="seg prov">
+            <button data-p="openvino">🖥 Local</button>
+            <button data-p="anthropic">✳ Claude</button>
+            <button data-p="gemini">✦ Gemini</button>
+            <button data-p="openai">🌐 Endpoint</button>
+            <button data-p="none">⏻ Off</button>
+          </div>
+          <div class="p-openvino">
+            <label>Device <select data-f="ov_device"></select></label>
+            <label>Model <select data-f="ov_model"></select></label>
+            <p class="muted small">Models live in <code>models/llm/</code>. Add more with
+              <code>python download_models.py --only llm --llm OpenVINO/&lt;repo&gt;</code></p>
+          </div>
+          <div class="p-anthropic">
+            <label>Access <select data-f="claude_access">
+              <option value="anthropic">Anthropic API (API key)</option>
+              <option value="bedrock">Amazon Bedrock (AWS)</option></select></label>
+            <div class="ca-anthropic">
+              <label>Anthropic API key <span class="key-hint" data-kh="anthropic"></span>
+                <div class="inline"><input data-k="anthropic" type="password" autocomplete="off" placeholder="blank = keep saved / use ANTHROPIC_API_KEY" />
+                <button class="btn ghost small" data-act="clearkey" data-key="anthropic" title="Remove saved key">✕</button></div></label>
+              <label>Model
+                <div class="inline"><input data-f="claude_model" list="dl-llm-claude_model" placeholder="claude-opus-5-5" />
+                <button class="btn ghost small" data-act="list" data-prov="anthropic">↻ List</button></div>
+                <datalist id="dl-llm-claude_model"></datalist></label>
+            </div>
+            <div class="ca-bedrock">
+              <div class="row2">
+                <label>AWS region <input data-f="bedrock_region" placeholder="blank = AWS_REGION" /></label>
+                <label>Bedrock endpoint <select data-f="bedrock_api">
+                  <option value="runtime">Runtime (InvokeModel)</option>
+                  <option value="mantle">Mantle (Messages API)</option></select></label>
+              </div>
+              <label>Bedrock API key <span class="key-hint" data-kh="bedrock"></span>
+                <div class="inline"><input data-k="bedrock" type="password" autocomplete="off" placeholder="blank = keep saved / use AWS_BEARER_TOKEN_BEDROCK or AWS credentials" />
+                <button class="btn ghost small" data-act="clearkey" data-key="bedrock" title="Remove saved key">✕</button></div></label>
+              <label>Model
+                <div class="inline"><input data-f="bedrock_model" list="dl-llm-bedrock_model" placeholder="us.anthropic.claude-opus-5-5" />
+                <button class="btn ghost small" data-act="list" data-prov="bedrock">↻ List</button></div>
+                <datalist id="dl-llm-bedrock_model"></datalist></label>
+              <p class="muted small">Runtime takes inference-profile ids (<code>us.anthropic.claude-…</code>); Mantle takes
+                <code>anthropic.claude-…</code>. With no API key, your AWS credential chain (profile / SSO / role) is used.</p>
+            </div>
+            <label>Effort <select data-f="claude_effort">
+              <option value="low">Low (fastest, ~cheapest)</option><option value="medium">Medium (default)</option>
+              <option value="high">High</option><option value="xhigh">Extra high</option><option value="max">Max (slowest)</option></select></label>
+            <p class="muted small">Uses the official Anthropic SDK. Refusal fallback is on: if Claude's safety classifier declines a request,
+              it is retried on a fallback model automatically.</p>
+          </div>
+          <div class="p-gemini">
+            <label>Gemini API key <span class="key-hint" data-kh="gemini"></span>
+              <div class="inline"><input data-k="gemini" type="password" autocomplete="off" placeholder="blank = keep saved / use GEMINI_API_KEY" />
+              <button class="btn ghost small" data-act="clearkey" data-key="gemini" title="Remove saved key">✕</button></div></label>
+            <label>Model
+              <div class="inline"><input data-f="gemini_model" list="dl-llm-gemini_model" placeholder="gemini-2.5-flash" />
+              <button class="btn ghost small" data-act="list" data-prov="gemini">↻ List</button></div>
+              <datalist id="dl-llm-gemini_model"></datalist></label>
+            <p class="muted small">Uses the official Google GenAI SDK. The Gemini key is shared with speech recognition.</p>
+          </div>
+          <div class="p-openai">
+            <label>Preset <select data-f="_preset"><option value="">Custom…</option></select></label>
+            <label>Endpoint URL (OpenAI-compatible base) <input data-f="base_url" placeholder="http://localhost:11434/v1" /></label>
+            <label>API key <span class="key-hint" data-kh="_section"></span>
+              <div class="inline"><input data-f="api_key" type="password" autocomplete="off" placeholder="leave blank for none / keep saved" />
+              <button class="btn ghost small" data-act="clearkey" data-key="_section" title="Remove saved key">✕</button></div></label>
+            <label>Model
+              <div class="inline"><input data-f="model" list="dl-llm-model" placeholder="model id" />
+              <button class="btn ghost small" data-act="list" data-prov="openai">↻ List</button></div>
+              <datalist id="dl-llm-model"></datalist></label>
+            <details class="adv"><summary>Advanced</summary>
+              <label>Extra request body (JSON) <input data-f="extra_body" placeholder='{"chat_template_kwargs":{"thinking":false}}' /></label>
+              <div class="row2">
+                <label>Temperature <input data-f="temperature" type="number" step="0.1" min="0" max="2" /></label>
+                <label>Max tokens <input data-f="max_tokens" type="number" step="50" min="100" max="4000" /></label>
+              </div>
+            </details>
+          </div>
+          <div class="p-none"><p class="muted small">Scripts will be lightly polished notes only; AI coaching is disabled.</p></div>
+          <div class="set-foot">
+            <span class="set-status small"></span>
+            <button class="btn ghost small" data-act="test">▶ Test</button>
+          </div>
+          <pre class="test-out hidden"></pre>
+        </section>
+
+        <section class="set-card" data-sec="stt">
+          <h3>Speech recognition</h3>
+          <p class="muted small">Transcribes your rehearsal takes for feedback.</p>
+          <div class="seg prov">
+            <button data-p="openvino">🖥 Whisper</button>
+            <button data-p="anthropic" disabled title="Claude does not accept audio input. Use Claude as the language model and Whisper or Gemini here.">✳ Claude</button>
+            <button data-p="gemini">✦ Gemini</button>
+            <button data-p="openai">🌐 Endpoint</button>
+            <button data-p="none">⏻ Off</button>
+          </div>
+          <div class="p-openvino">
+            <label>Device <select data-f="ov_device"></select></label>
+            <label>Model <select data-f="ov_model"></select></label>
+            <label class="check small"><input type="checkbox" data-f="filler_prompt" /> Keep filler words (adds a disfluent prompt; not supported on NPU)</label>
+            <p class="muted small">Models live in <code>models/whisper/</code>. Add more with
+              <code>python download_models.py --only whisper --whisper OpenVINO/&lt;repo&gt;</code></p>
+          </div>
+          <div class="p-anthropic"><p class="muted small">Claude can't transcribe audio: its API accepts text, images and PDFs only.</p></div>
+          <div class="p-gemini">
+            <label>Gemini API key <span class="key-hint" data-kh="gemini"></span>
+              <div class="inline"><input data-k="gemini" type="password" autocomplete="off" placeholder="blank = keep saved / use GEMINI_API_KEY" />
+              <button class="btn ghost small" data-act="clearkey" data-key="gemini" title="Remove saved key">✕</button></div></label>
+            <label>Model
+              <div class="inline"><input data-f="gemini_model" list="dl-stt-gemini_model" placeholder="gemini-2.5-flash" />
+              <button class="btn ghost small" data-act="list" data-prov="gemini">↻ List</button></div>
+              <datalist id="dl-stt-gemini_model"></datalist></label>
+            <label class="check small"><input type="checkbox" data-f="filler_prompt" /> Keep filler words (asks Gemini for a verbatim transcript)</label>
+            <p class="muted small">Uses the official Google GenAI SDK. The Gemini key is shared with the language model. Your recording is sent to Google for transcription.</p>
+          </div>
+          <div class="p-openai">
+            <label>Preset <select data-f="_preset"><option value="">Custom…</option></select></label>
+            <label>Endpoint URL (OpenAI-compatible base) <input data-f="base_url" placeholder="http://localhost:11434/v1" /></label>
+            <label>API key <span class="key-hint" data-kh="_section"></span>
+              <div class="inline"><input data-f="api_key" type="password" autocomplete="off" placeholder="leave blank for none / keep saved" />
+              <button class="btn ghost small" data-act="clearkey" data-key="_section" title="Remove saved key">✕</button></div></label>
+            <label>Model
+              <div class="inline"><input data-f="model" list="dl-stt-model" placeholder="model id" />
+              <button class="btn ghost small" data-act="list" data-prov="openai">↻ List</button></div>
+              <datalist id="dl-stt-model"></datalist></label>
+            <label class="check small"><input type="checkbox" data-f="filler_prompt" /> Send filler-word prompt</label>
+          </div>
+          <div class="p-none"><p class="muted small">The Rehearse tab will be disabled.</p></div>
+          <div class="set-foot">
+            <span class="set-status small"></span>
+            <button class="btn ghost small" data-act="test">▶ Test</button>
+          </div>
+          <pre class="test-out hidden"></pre>
+        </section>
+      </div>
+      <div class="modal-foot">
+        <span class="muted small">Saved on this machine in <code>data/settings.json</code>. API keys never leave the server.</span>
+        <span class="spacer"></span>
+        <button class="btn ghost" id="cancelSettings">Cancel</button>
+        <button class="btn primary" id="saveSettings">Save &amp; apply</button>
+      </div>
+    </div>
+  </div>
+  <div id="toast" class="toast"></div>
+  <div id="busy" class="busy hidden"><div class="spinner"></div><span id="busyText">Working…</span></div>
+  <audio id="audio" preload="auto"></audio>
+  <script src="/app.js"></script>
+</body>
+</html>
